@@ -205,6 +205,25 @@ const httpServer = createServer(async (req, res) => {
     }
   }
 
+  // DELETE /api/agents/:id — unregister agent from OpenClaw gateway
+  const deleteAgentMatch = path.match(/^\/api\/agents\/([^/]+)$/);
+  if (req.method === 'DELETE' && deleteAgentMatch) {
+    const agentId = decodeURIComponent(deleteAgentMatch[1]);
+    const container = process.env.OPENCLAW_CONTAINER || '';
+    const prefix = container ? `docker exec ${container} ` : '';
+    // Try to kill any running session first, then unregister
+    try {
+      await execAsync(`${prefix}openclaw gateway call sessions.kill --params '{"key":"${agentId}"}' 2>/dev/null`, { timeout: 5000 });
+    } catch { /* ignore — may not be running */ }
+    try {
+      await execAsync(`${prefix}openclaw gateway call agents.unregister --params '{"agentId":"${agentId}"}' --json 2>/dev/null`, { timeout: 8000 });
+    } catch { /* best-effort: gateway may not support unregister */ }
+    // Remove from local gwState immediately so next broadcast reflects it
+    gwState = { ...gwState, agents: gwState.agents.filter(a => a.id !== agentId && a.name !== agentId) };
+    broadcastStatus();
+    return json(res, 200, { ok: true, agentId });
+  }
+
   // GET /api/logs/:agentId — tail logs for agent/session
   const logsMatch = path.match(/^\/api\/logs\/(.+)$/);
   if (req.method === 'GET' && logsMatch) {

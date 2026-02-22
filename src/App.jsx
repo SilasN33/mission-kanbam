@@ -20,7 +20,7 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
-// Live WS hook
+// Live WS hook — returns [gwState, removeAgentById]
 function useGateway() {
   const [gw, setGw] = useState({ connected: false, agents: [], sessions: [] });
   const ws = useRef(null);
@@ -47,7 +47,12 @@ function useGateway() {
     return () => ws.current?.close();
   }, []);
 
-  return gw;
+  // Optimistic remove — server broadcast will reconcile on next poll
+  const removeAgent = useCallback((agentId) => {
+    setGw(g => ({ ...g, agents: g.agents.filter(a => a.id !== agentId && a.name !== agentId) }));
+  }, []);
+
+  return [gw, removeAgent];
 }
 
 export default function App() {
@@ -61,7 +66,7 @@ export default function App() {
   const [logDrawer, setLogDrawer] = useState(null); // { id, name }
   const [actionLoading, setActionLoading] = useState({});
   const [form, setForm] = useState({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
-  const gw = useGateway();
+  const [gw, removeAgentOptimistic] = useGateway();
 
   const agentAction = async (agentId, action) => {
     setActionLoading(prev => ({ ...prev, [agentId]: action }));
@@ -69,6 +74,22 @@ export default function App() {
       await api(`/agents/${encodeURIComponent(agentId)}/${action}`, { method: 'POST' });
     } catch (e) { console.error(e); }
     finally { setActionLoading(prev => ({ ...prev, [agentId]: null })); }
+  };
+
+  const deleteAgent = async (agent) => {
+    const label = agent.name || agent.id;
+    if (!confirm(`Remover agente "${label}" do gateway OpenClaw?\n\nIsto encerrará qualquer sessão ativa.`)) return;
+    setActionLoading(prev => ({ ...prev, [agent.id]: 'delete' }));
+    try {
+      await api(`/agents/${encodeURIComponent(agent.id)}`, { method: 'DELETE' });
+      removeAgentOptimistic(agent.id);
+    } catch (e) {
+      console.error(e);
+      // Remove optimistically even on error — gateway may have succeeded
+      removeAgentOptimistic(agent.id);
+    } finally {
+      setActionLoading(prev => ({ ...prev, [agent.id]: null }));
+    }
   };
 
   const load = useCallback(async () => {
@@ -198,6 +219,14 @@ export default function App() {
                       title="Ver logs"
                     >
                       📋
+                    </button>
+                    <button
+                      className="btn-del-agent"
+                      disabled={actionLoading[agent.id] === 'delete'}
+                      onClick={() => deleteAgent(agent)}
+                      title="Remover agente do gateway"
+                    >
+                      {actionLoading[agent.id] === 'delete' ? '…' : '🗑'}
                     </button>
                   </div>
                 </div>

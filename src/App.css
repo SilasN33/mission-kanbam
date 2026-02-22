@@ -95,6 +95,9 @@ header {
 .btn-stop:hover { background: rgba(248,113,113,0.3) !important; }
 .btn-logs { background: rgba(124,58,237,0.15); color: #a78bfa; border-color: #7c3aed44 !important; }
 .btn-logs:hover { background: rgba(124,58,237,0.3) !important; }
+.btn-del-agent { background: rgba(248,113,113,0.15); color: #f87171; border-color: #f8717144 !important; }
+.btn-del-agent:hover { background: rgba(248,113,113,0.3) !important; }
+.btn-del-agent:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Pills */
 .pill {
