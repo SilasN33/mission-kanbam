@@ -1,27 +1,51 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 
 const COLUMNS = ['Backlog', 'In Progress', 'Review', 'Done'];
-
 const SQUADS = {
   core: { label: 'Core', color: '#7c3aed' },
   research: { label: 'Research', color: '#a855f7' },
   infra: { label: 'Infra', color: '#6d28d9' },
   ops: { label: 'Ops', color: '#4c1d95' },
 };
-
 const PRIORITIES = ['low', 'medium', 'high'];
 const PRIORITY_COLOR = { low: '#4ade80', medium: '#facc15', high: '#f87171' };
-
-const API = '/api';
+const STATUS_COLOR = { idle: '#4ade80', running: '#facc15', error: '#f87171', disabled: '#6b7280' };
 
 async function api(path, opts = {}) {
-  const res = await fetch(`${API}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
+  const res = await fetch(`/api${path}`, { headers: { 'Content-Type': 'application/json' }, ...opts });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
+}
+
+// Live WS hook
+function useGateway() {
+  const [gw, setGw] = useState({ connected: false, agents: [], sessions: [] });
+  const ws = useRef(null);
+  const retry = useRef(1000);
+
+  useEffect(() => {
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(`${proto}//${location.hostname}:3001`);
+      ws.current = socket;
+      socket.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'status') { setGw(msg.data); retry.current = 1000; }
+        } catch {}
+      };
+      socket.onclose = () => {
+        setGw(g => ({ ...g, connected: false }));
+        setTimeout(connect, retry.current);
+        retry.current = Math.min(retry.current * 2, 15000);
+      };
+    }
+    connect();
+    return () => ws.current?.close();
+  }, []);
+
+  return gw;
 }
 
 export default function App() {
@@ -30,17 +54,14 @@ export default function App() {
   const [filterSquad, setFilterSquad] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [showSquadMgr, setShowSquadMgr] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
   const [form, setForm] = useState({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
+  const gw = useGateway();
 
   const load = useCallback(async () => {
-    try {
-      const data = await api('/tasks');
-      setTasks(data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
+    try { setTasks(await api('/tasks')); }
+    catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -49,7 +70,6 @@ export default function App() {
     filterSquad === 'all' ? tasks : tasks.filter(t => t.squad === filterSquad),
     [tasks, filterSquad]
   );
-
   const grouped = useMemo(() =>
     COLUMNS.reduce((acc, col) => { acc[col] = filtered.filter(t => t.status === col); return acc; }, {}),
     [filtered]
@@ -58,25 +78,18 @@ export default function App() {
   const move = async (id, dir) => {
     const task = tasks.find(t => t.id === id);
     if (!task) return;
-    const i = COLUMNS.indexOf(task.status);
-    const newStatus = COLUMNS[Math.max(0, Math.min(COLUMNS.length - 1, i + dir))];
+    const newStatus = COLUMNS[Math.max(0, Math.min(COLUMNS.length - 1, COLUMNS.indexOf(task.status) + dir))];
     if (newStatus === task.status) return;
-
-    // Optimistic update
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
-    try {
-      await api(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
-    } catch { load(); }
+    try { await api(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) }); }
+    catch { load(); }
   };
 
   const addTask = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) return;
     try {
-      const task = await api('/tasks', {
-        method: 'POST',
-        body: JSON.stringify({ ...form, title: form.title.trim(), owner: form.owner.trim() || 'Unassigned' }),
-      });
+      const task = await api('/tasks', { method: 'POST', body: JSON.stringify({ ...form, title: form.title.trim(), owner: form.owner.trim() || 'Unassigned' }) });
       setTasks(prev => [...prev, task]);
       setForm({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
       setShowForm(false);
@@ -93,8 +106,7 @@ export default function App() {
       key, ...s,
       count: tasks.filter(t => t.squad === key).length,
       done: tasks.filter(t => t.squad === key && t.status === 'Done').length,
-    })),
-    [tasks]
+    })), [tasks]
   );
 
   return (
@@ -108,45 +120,72 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          {/* Gateway indicator */}
+          <div className={`gw-badge ${gw.connected ? 'gw-ok' : 'gw-off'}`}>
+            <span className="gw-dot" />
+            {gw.connected ? 'Gateway' : 'Offline'}
+          </div>
+          <button onClick={() => setShowAgents(s => !s)}>
+            Agents {gw.agents.length > 0 && <span className="pill">{gw.agents.length}</span>}
+          </button>
           <button onClick={() => setShowSquadMgr(s => !s)}>Squads</button>
           <button className="btn-primary" onClick={() => setShowForm(s => !s)}>+ Nova tarefa</button>
         </div>
       </header>
 
+      {/* Live Agents panel */}
+      {showAgents && (
+        <section className="agents-panel">
+          <h2>Agentes OpenClaw {gw.connected ? <span className="pill green">live</span> : <span className="pill red">offline</span>}</h2>
+          {gw.agents.length === 0 ? (
+            <p className="empty">{gw.connected ? 'Nenhum agente registrado no gateway.' : 'Gateway desconectado — configure OPENCLAW_GATEWAY_TOKEN no .env'}</p>
+          ) : (
+            <div className="agents-grid">
+              {gw.agents.map(agent => (
+                <div key={agent.id} className="agent-card">
+                  <div className="agent-status-dot" style={{ background: STATUS_COLOR[agent.status] || '#6b7280' }} />
+                  <div>
+                    <strong>{agent.name || agent.id}</strong>
+                    <p>{agent.status || 'unknown'} · {agent.model || '—'}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Squad manager */}
       {showSquadMgr && (
         <section className="squad-panel">
           <h2>Grupos de Agentes</h2>
           <div className="squad-grid">
             {squadStats.map(s => (
               <div key={s.key} className="squad-card" style={{ '--squad-color': s.color }}>
-                <div className="squad-dot" />
                 <div>
                   <strong>{s.label}</strong>
                   <p>{s.count} tasks · {s.done} done</p>
                 </div>
-                <div className="squad-bar">
-                  <div className="squad-fill" style={{ width: s.count ? `${(s.done / s.count) * 100}%` : '0%' }} />
-                </div>
+                <div className="squad-bar"><div className="squad-fill" style={{ width: s.count ? `${(s.done / s.count) * 100}%` : '0%' }} /></div>
               </div>
             ))}
           </div>
         </section>
       )}
 
+      {/* Filters */}
       <div className="filters">
         <button className={filterSquad === 'all' ? 'active' : ''} onClick={() => setFilterSquad('all')}>Todos</button>
         {Object.entries(SQUADS).map(([key, s]) => (
           <button key={key} className={filterSquad === key ? 'active' : ''} onClick={() => setFilterSquad(key)}>
-            <span className="dot" style={{ background: s.color }} />
-            {s.label}
+            <span className="dot" style={{ background: s.color }} />{s.label}
           </button>
         ))}
         <span className="task-count">{tasks.length} tasks</span>
       </div>
 
-      {loading ? (
-        <div className="loading">Carregando tasks...</div>
-      ) : (
+      {/* Board */}
+      {loading ? <div className="loading">Carregando...</div> : (
         <section className="board">
           {COLUMNS.map(col => (
             <article key={col} className="column">
@@ -185,6 +224,7 @@ export default function App() {
         </section>
       )}
 
+      {/* New task form */}
       {showForm && (
         <section className="composer">
           <h2>Nova Tarefa</h2>
