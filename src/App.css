@@ -273,6 +273,37 @@ button:disabled { opacity: 0.3; cursor: not-allowed; }
 .card-actions { display: flex; gap: 0.5rem; margin-top: 0.25rem; }
 .card-actions button { flex: 1; padding: 0.45rem; border-radius: 9px; font-size: 0.85rem; }
 
+/* Agent live status on cards */
+.card[data-agent-status="running"] {
+  border-color: rgba(250,204,21,0.55);
+  box-shadow: 0 0 0 1px rgba(250,204,21,0.2), 0 0 18px rgba(250,204,21,0.12);
+  animation: card-running-pulse 2.5s ease-in-out infinite;
+}
+@keyframes card-running-pulse {
+  0%,100% { box-shadow: 0 0 0 1px rgba(250,204,21,0.2), 0 0 18px rgba(250,204,21,0.12); }
+  50%      { box-shadow: 0 0 0 1px rgba(250,204,21,0.45), 0 0 28px rgba(250,204,21,0.25); }
+}
+.card[data-agent-status="error"] {
+  border-color: rgba(248,113,113,0.55);
+  box-shadow: 0 0 0 1px rgba(248,113,113,0.2), 0 0 18px rgba(248,113,113,0.12);
+}
+.card[data-agent-status="idle"] {
+  border-color: rgba(74,222,128,0.3);
+}
+
+/* Owner row with live dot */
+.owner-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.owner-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
+}
+
 /* Composer */
 .composer {
   margin-top: 1.75rem;

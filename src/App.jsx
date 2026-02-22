@@ -122,6 +122,16 @@ export default function App() {
     })), [tasks]
   );
 
+  // Map agent name/id (lowercase) → agent for card highlighting
+  const agentByName = useMemo(() => {
+    const map = {};
+    for (const a of gw.agents) {
+      if (a.name) map[a.name.toLowerCase()] = a;
+      if (a.id)   map[a.id.toLowerCase()]   = a;
+    }
+    return map;
+  }, [gw.agents]);
+
   return (
     <div className="app">
       <header>
@@ -238,8 +248,15 @@ export default function App() {
               <div className="col-body">
                 {grouped[col].map(task => {
                   const squad = SQUADS[task.squad];
+                  const liveAgent = agentByName[task.owner?.toLowerCase()];
+                  const agentStatus = liveAgent?.status;
                   return (
-                    <div key={task.id} className="card" style={{ '--squad-color': squad?.color || '#7c3aed' }}>
+                    <div
+                      key={task.id}
+                      className="card"
+                      style={{ '--squad-color': squad?.color || '#7c3aed' }}
+                      data-agent-status={agentStatus || ''}
+                    >
                       <div className="card-stripe" />
                       <div className="card-meta">
                         <span className="task-id">{task.id}</span>
@@ -249,11 +266,27 @@ export default function App() {
                       {task.description && <p>{task.description}</p>}
                       <div className="card-footer">
                         <span className="squad-badge" style={{ background: squad?.color + '33', color: squad?.color }}>{squad?.label}</span>
-                        <span className="owner">{task.owner}</span>
+                        <span className="owner-row">
+                          {liveAgent && (
+                            <span
+                              className="owner-dot"
+                              style={{ background: STATUS_COLOR[agentStatus] || '#6b7280' }}
+                              title={`${liveAgent.name || liveAgent.id}: ${agentStatus}`}
+                            />
+                          )}
+                          <span className="owner">{task.owner}</span>
+                        </span>
                       </div>
                       <div className="card-actions">
                         <button onClick={() => move(task.id, -1)} disabled={task.status === 'Backlog'}>◀</button>
                         <button onClick={() => move(task.id, 1)} disabled={task.status === 'Done'}>▶</button>
+                        {liveAgent && (
+                          <button
+                            className="btn-logs"
+                            onClick={() => setLogDrawer({ id: liveAgent.id, name: liveAgent.name || liveAgent.id })}
+                            title={`Logs: ${liveAgent.name || liveAgent.id}`}
+                          >📋</button>
+                        )}
                         <button className="btn-del" onClick={() => deleteTask(task.id)} title="Remover">✕</button>
                       </div>
                     </div>
