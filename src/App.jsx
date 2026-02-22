@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
+import LogDrawer from './LogDrawer';
 
 const COLUMNS = ['Backlog', 'In Progress', 'Review', 'Done'];
 const SQUADS = {
@@ -55,8 +56,18 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [showSquadMgr, setShowSquadMgr] = useState(false);
   const [showAgents, setShowAgents] = useState(false);
+  const [logDrawer, setLogDrawer] = useState(null); // { id, name }
+  const [actionLoading, setActionLoading] = useState({});
   const [form, setForm] = useState({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
   const gw = useGateway();
+
+  const agentAction = async (agentId, action) => {
+    setActionLoading(prev => ({ ...prev, [agentId]: action }));
+    try {
+      await api(`/agents/${encodeURIComponent(agentId)}/${action}`, { method: 'POST' });
+    } catch (e) { console.error(e); }
+    finally { setActionLoading(prev => ({ ...prev, [agentId]: null })); }
+  };
 
   const load = useCallback(async () => {
     try { setTasks(await api('/tasks')); }
@@ -138,15 +149,43 @@ export default function App() {
         <section className="agents-panel">
           <h2>Agentes OpenClaw {gw.connected ? <span className="pill green">live</span> : <span className="pill red">offline</span>}</h2>
           {gw.agents.length === 0 ? (
-            <p className="empty">{gw.connected ? 'Nenhum agente registrado no gateway.' : 'Gateway desconectado — configure OPENCLAW_GATEWAY_TOKEN no .env'}</p>
+            <p className="empty">{gw.connected ? 'Nenhum agente registrado no gateway.' : 'Gateway desconectado — configure OPENCLAW_CONTAINER no .env'}</p>
           ) : (
             <div className="agents-grid">
               {gw.agents.map(agent => (
                 <div key={agent.id} className="agent-card">
                   <div className="agent-status-dot" style={{ background: STATUS_COLOR[agent.status] || '#6b7280' }} />
-                  <div>
+                  <div className="agent-info">
                     <strong>{agent.name || agent.id}</strong>
                     <p>{agent.status || 'unknown'} · {agent.model || '—'}</p>
+                  </div>
+                  <div className="agent-actions">
+                    {agent.status !== 'running' ? (
+                      <button
+                        className="btn-run"
+                        disabled={!!actionLoading[agent.id]}
+                        onClick={() => agentAction(agent.id, 'run')}
+                        title="Iniciar"
+                      >
+                        {actionLoading[agent.id] === 'run' ? '...' : '▶'}
+                      </button>
+                    ) : (
+                      <button
+                        className="btn-stop"
+                        disabled={!!actionLoading[agent.id]}
+                        onClick={() => agentAction(agent.id, 'stop')}
+                        title="Parar"
+                      >
+                        {actionLoading[agent.id] === 'stop' ? '...' : '■'}
+                      </button>
+                    )}
+                    <button
+                      className="btn-logs"
+                      onClick={() => setLogDrawer({ id: agent.id, name: agent.name || agent.id })}
+                      title="Ver logs"
+                    >
+                      📋
+                    </button>
                   </div>
                 </div>
               ))}
@@ -225,6 +264,14 @@ export default function App() {
       )}
 
       {/* New task form */}
+      {logDrawer && (
+        <LogDrawer
+          agentId={logDrawer.id}
+          agentName={logDrawer.name}
+          onClose={() => setLogDrawer(null)}
+        />
+      )}
+
       {showForm && (
         <section className="composer">
           <h2>Nova Tarefa</h2>

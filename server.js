@@ -133,13 +133,75 @@ const httpServer = createServer(async (req, res) => {
     }
   }
 
-  // GET /api/status — gateway status + agents
+  // GET /api/status
   if (req.method === 'GET' && path === '/api/status') {
     return json(res, 200, {
-      gateway: { connected: gwState.connected, lastPing: gwState.lastPing, url: GW_URL },
+      gateway: { connected: gwState.connected, lastPing: gwState.lastPing },
       agents: gwState.agents,
       sessions: gwState.sessions,
     });
+  }
+
+  // POST /api/agents/:id/run — start a run
+  const runMatch = path.match(/^\/api\/agents\/(.+)\/run$/);
+  if (req.method === 'POST' && runMatch) {
+    const agentId = runMatch[1];
+    try {
+      const container = process.env.OPENCLAW_CONTAINER || '';
+      const prefix = container ? `docker exec ${container} ` : '';
+      await execAsync(`${prefix}openclaw gateway call sessions.run --params '{"agentId":"${agentId}"}' 2>/dev/null`, { timeout: 8000 });
+      return json(res, 200, { ok: true, agentId });
+    } catch (e) {
+      return json(res, 500, { error: e.message });
+    }
+  }
+
+  // DELETE /api/agents/:id/run — stop a run
+  const stopMatch = path.match(/^\/api\/agents\/(.+)\/stop$/);
+  if (req.method === 'POST' && stopMatch) {
+    const agentId = stopMatch[1];
+    try {
+      const container = process.env.OPENCLAW_CONTAINER || '';
+      const prefix = container ? `docker exec ${container} ` : '';
+      await execAsync(`${prefix}openclaw gateway call sessions.kill --params '{"key":"${agentId}"}' 2>/dev/null`, { timeout: 8000 });
+      return json(res, 200, { ok: true, agentId });
+    } catch (e) {
+      return json(res, 500, { error: e.message });
+    }
+  }
+
+  // GET /api/logs/:agentId — tail logs for agent/session
+  const logsMatch = path.match(/^\/api\/logs\/(.+)$/);
+  if (req.method === 'GET' && logsMatch) {
+    const agentId = decodeURIComponent(logsMatch[1]);
+    const limit = parseInt(url.searchParams.get('limit') || '50');
+    try {
+      const container = process.env.OPENCLAW_CONTAINER || '';
+      const prefix = container ? `docker exec ${container} ` : '';
+      const { stdout } = await execAsync(
+        `${prefix}openclaw gateway call sessions.history --params '{"sessionKey":"${agentId}","limit":${limit}}' --json 2>/dev/null`,
+        { timeout: 8000 }
+      );
+      const data = JSON.parse(stdout);
+      const messages = data?.result?.messages || data?.messages || [];
+      const logs = messages.map(m => ({
+        ts: m.timestamp || m.ts || null,
+        level: m.role === 'assistant' ? 'info' : 'debug',
+        message: typeof m.content === 'string' ? m.content : JSON.stringify(m.content).slice(0, 300),
+      }));
+      return json(res, 200, { logs });
+    } catch (e) {
+      // Fallback: try docker logs
+      try {
+        const container = process.env.OPENCLAW_CONTAINER || '';
+        if (container) {
+          const { stdout } = await execAsync(`docker logs --tail ${limit} ${container} 2>&1`, { timeout: 5000 });
+          const logs = stdout.split('\n').filter(Boolean).map(line => ({ ts: null, level: 'info', message: line }));
+          return json(res, 200, { logs });
+        }
+      } catch {}
+      return json(res, 200, { logs: [] });
+    }
   }
 
   json(res, 404, { error: 'Not found' });
