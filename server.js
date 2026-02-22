@@ -13,6 +13,13 @@ const TASKS_FILE = join(DATA_DIR, 'tasks.json');
 
 if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR);
 
+const AGENTS_FILE = join(DATA_DIR, 'agents.json');
+function readAgents() {
+  if (!existsSync(AGENTS_FILE)) return [];
+  return JSON.parse(readFileSync(AGENTS_FILE, 'utf8'));
+}
+function writeAgents(agents) { writeFileSync(AGENTS_FILE, JSON.stringify(agents, null, 2)); }
+
 const SEED = [
   { id: 'T-101', title: 'Connect Gateway', owner: 'Friday', description: 'Validate ws://127.0.0.1:18789 connection', status: 'Backlog', squad: 'infra', priority: 'high' },
   { id: 'T-102', title: 'Agent CRUD', owner: 'Atlas', description: 'Form + list for agents', status: 'In Progress', squad: 'core', priority: 'high' },
@@ -129,6 +136,34 @@ const httpServer = createServer(async (req, res) => {
       let tasks = readTasks();
       tasks = tasks.filter(t => t.id !== match[1]);
       writeTasks(tasks);
+      return json(res, 200, { ok: true });
+    }
+  }
+
+  // ── Managed Agents CRUD ───────────────────────────────────────────────────
+  if (req.method === 'GET' && path === '/api/managed-agents') {
+    return json(res, 200, readAgents());
+  }
+  if (req.method === 'POST' && path === '/api/managed-agents') {
+    const b = await body(req);
+    const agents = readAgents();
+    const agent = { ...b, id: `agent-${Date.now()}`, createdAt: new Date().toISOString() };
+    agents.push(agent);
+    writeAgents(agents);
+    return json(res, 201, agent);
+  }
+  const agentCrudMatch = path.match(/^\/api\/managed-agents\/(.+)$/);
+  if (agentCrudMatch) {
+    const id = agentCrudMatch[1];
+    if (req.method === 'PUT') {
+      const b = await body(req);
+      let agents = readAgents();
+      agents = agents.map(a => a.id === id ? { ...a, ...b, id } : a);
+      writeAgents(agents);
+      return json(res, 200, agents.find(a => a.id === id) || {});
+    }
+    if (req.method === 'DELETE') {
+      writeAgents(readAgents().filter(a => a.id !== id));
       return json(res, 200, { ok: true });
     }
   }

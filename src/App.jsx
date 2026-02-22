@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
 import LogDrawer from './LogDrawer';
+import AgentManager from './AgentManager';
 
 const COLUMNS = ['Backlog', 'In Progress', 'Review', 'Done'];
 const SQUADS = {
@@ -56,6 +57,7 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [showSquadMgr, setShowSquadMgr] = useState(false);
   const [showAgents, setShowAgents] = useState(false);
+  const [showAgentMgr, setShowAgentMgr] = useState(false);
   const [logDrawer, setLogDrawer] = useState(null); // { id, name }
   const [actionLoading, setActionLoading] = useState({});
   const [form, setForm] = useState({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
@@ -139,6 +141,7 @@ export default function App() {
           <button onClick={() => setShowAgents(s => !s)}>
             Agents {gw.agents.length > 0 && <span className="pill">{gw.agents.length}</span>}
           </button>
+          <button onClick={() => setShowAgentMgr(true)}>⚙ Gerenciar</button>
           <button onClick={() => setShowSquadMgr(s => !s)}>Squads</button>
           <button className="btn-primary" onClick={() => setShowForm(s => !s)}>+ Nova tarefa</button>
         </div>
@@ -264,6 +267,10 @@ export default function App() {
       )}
 
       {/* New task form */}
+      {showAgentMgr && (
+        <AgentManager gwAgents={gw.agents} onClose={() => setShowAgentMgr(false)} />
+      )}
+
       {logDrawer && (
         <LogDrawer
           agentId={logDrawer.id}
