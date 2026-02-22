@@ -3,7 +3,10 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocketServer, WebSocket } from 'ws';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
+const execAsync = promisify(exec);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const TASKS_FILE = join(DATA_DIR, 'tasks.json');
@@ -26,78 +29,57 @@ function readTasks() {
 }
 function writeTasks(tasks) { writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2)); }
 
-// ─── OpenClaw gateway state ──────────────────────────────────────────────────
-const GW_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
-const GW_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
-
+// ─── OpenClaw status via CLI ─────────────────────────────────────────────────
 let gwState = { connected: false, agents: [], sessions: [], lastPing: null };
-let gwSocket = null;
-let gwRetryDelay = 1000;
 
-function connectGateway() {
+async function pollGateway() {
   try {
-    const wsUrl = GW_TOKEN ? `${GW_URL}?token=${GW_TOKEN}` : GW_URL;
-    gwSocket = new WebSocket(wsUrl);
-
-    gwSocket.on('open', () => {
-      console.log('[gw] connected');
-      gwState.connected = true;
-      gwRetryDelay = 1000;
-      broadcastStatus();
-      // Request status
-      gwSocket.send(JSON.stringify({ type: 'status' }));
-    });
-
-    gwSocket.on('message', (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        handleGWMessage(msg);
-      } catch {}
-    });
-
-    gwSocket.on('close', () => {
-      console.log('[gw] disconnected — retrying in', gwRetryDelay, 'ms');
-      gwState.connected = false;
-      broadcastStatus();
-      setTimeout(connectGateway, gwRetryDelay);
-      gwRetryDelay = Math.min(gwRetryDelay * 2, 30000);
-    });
-
-    gwSocket.on('error', () => {
-      gwSocket.terminate();
-    });
-  } catch (e) {
-    setTimeout(connectGateway, gwRetryDelay);
-    gwRetryDelay = Math.min(gwRetryDelay * 2, 30000);
+    // Use openclaw CLI to fetch sessions (already authenticated)
+    const { stdout } = await execAsync('openclaw gateway call sessions.list --params \'{}\' --json 2>/dev/null', { timeout: 8000 });
+    const data = JSON.parse(stdout);
+    const sessions = data?.result?.sessions || data?.sessions || [];
+    gwState = {
+      connected: true,
+      agents: sessions.map(s => ({
+        id: s.key || s.id,
+        name: s.label || s.key || s.id,
+        status: s.status === 'active' ? 'running' : (s.status || 'idle'),
+        model: s.model || '—',
+      })),
+      sessions,
+      lastPing: new Date().toISOString(),
+    };
+  } catch {
+    // Try docker exec fallback if openclaw CLI not in PATH
+    try {
+      const container = process.env.OPENCLAW_CONTAINER || 'openclaw-r2gm-openclaw-1';
+      const { stdout } = await execAsync(
+        `docker exec ${container} openclaw gateway call sessions.list --params '{}' --json 2>/dev/null`,
+        { timeout: 8000 }
+      );
+      const data = JSON.parse(stdout);
+      const sessions = data?.result?.sessions || data?.sessions || [];
+      gwState = {
+        connected: true,
+        agents: sessions.map(s => ({
+          id: s.key || s.id,
+          name: s.label || s.key || s.id,
+          status: s.status === 'active' ? 'running' : (s.status || 'idle'),
+          model: s.model || '—',
+        })),
+        sessions,
+        lastPing: new Date().toISOString(),
+      };
+    } catch {
+      gwState = { ...gwState, connected: false };
+    }
   }
+  broadcastStatus();
 }
 
-function handleGWMessage(msg) {
-  if (msg.type === 'status' || msg.type === 'status_update') {
-    if (msg.data?.agents) gwState.agents = msg.data.agents;
-    if (msg.data?.sessions) gwState.sessions = msg.data.sessions;
-    gwState.lastPing = new Date().toISOString();
-    broadcastStatus();
-  }
-  if (msg.type === 'agent_update' && msg.data) {
-    const idx = gwState.agents.findIndex(a => a.id === msg.data.id);
-    if (idx >= 0) gwState.agents[idx] = { ...gwState.agents[idx], ...msg.data };
-    else gwState.agents.push(msg.data);
-    broadcastStatus();
-  }
-}
-
-// Ping gateway every 15s
-setInterval(() => {
-  if (gwSocket?.readyState === WebSocket.OPEN) {
-    gwSocket.send(JSON.stringify({ type: 'ping' }));
-    gwSocket.send(JSON.stringify({ type: 'status' }));
-    gwState.lastPing = new Date().toISOString();
-  }
-}, 15000);
-
-// Start connection
-connectGateway();
+// Poll every 15s
+pollGateway();
+setInterval(pollGateway, 15000);
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
 const CORS = {

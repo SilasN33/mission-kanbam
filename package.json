@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"node server.js\" \"vite\" --names \"api,web\" --prefix-colors \"magenta,cyan\"",
-    "server": "node server.js",
+    "dev": "concurrently \"node --env-file=.env server.js\" \"vite\" --names \"api,web\" --prefix-colors \"magenta,cyan\"",
+    "server": "node --env-file=.env server.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
