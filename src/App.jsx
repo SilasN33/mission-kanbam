@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import './App.css';
 
 const COLUMNS = ['Backlog', 'In Progress', 'Review', 'Done'];
@@ -11,28 +11,39 @@ const SQUADS = {
 };
 
 const PRIORITIES = ['low', 'medium', 'high'];
-
-const SEED = [
-  { id: 'T-101', title: 'Connect Gateway', owner: 'Friday', description: 'Validate ws://127.0.0.1:18789 connection', status: 'Backlog', squad: 'infra', priority: 'high' },
-  { id: 'T-102', title: 'Agent CRUD', owner: 'Atlas', description: 'Form + list for agents', status: 'In Progress', squad: 'core', priority: 'high' },
-  { id: 'T-103', title: 'Mission UI', owner: 'Nyx', description: 'Minimal Kanban board', status: 'Review', squad: 'core', priority: 'medium' },
-  { id: 'T-104', title: 'LLM Router', owner: 'Silas', description: 'Route prompts to best model', status: 'Backlog', squad: 'research', priority: 'medium' },
-  { id: 'T-105', title: 'Docker Compose', owner: 'Atlas', description: 'Multi-service compose setup', status: 'Done', squad: 'infra', priority: 'low' },
-  { id: 'T-106', title: 'Cost Tracker', owner: 'Friday', description: 'Token usage per run', status: 'In Progress', squad: 'ops', priority: 'medium' },
-];
-
 const PRIORITY_COLOR = { low: '#4ade80', medium: '#facc15', high: '#f87171' };
 
-function newId() {
-  return `T-${Date.now().toString().slice(-5)}`;
+const API = '/api';
+
+async function api(path, opts = {}) {
+  const res = await fetch(`${API}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
 }
 
 export default function App() {
-  const [tasks, setTasks] = useState(SEED);
+  const [tasks, setTasks] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [filterSquad, setFilterSquad] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [showSquadMgr, setShowSquadMgr] = useState(false);
   const [form, setForm] = useState({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api('/tasks');
+      setTasks(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
 
   const filtered = useMemo(() =>
     filterSquad === 'all' ? tasks : tasks.filter(t => t.squad === filterSquad),
@@ -44,18 +55,37 @@ export default function App() {
     [filtered]
   );
 
-  const move = (id, dir) => setTasks(prev => prev.map(t => {
-    if (t.id !== id) return t;
-    const i = COLUMNS.indexOf(t.status);
-    return { ...t, status: COLUMNS[Math.max(0, Math.min(COLUMNS.length - 1, i + dir))] };
-  }));
+  const move = async (id, dir) => {
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+    const i = COLUMNS.indexOf(task.status);
+    const newStatus = COLUMNS[Math.max(0, Math.min(COLUMNS.length - 1, i + dir))];
+    if (newStatus === task.status) return;
 
-  const addTask = (e) => {
+    // Optimistic update
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, status: newStatus } : t));
+    try {
+      await api(`/tasks/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
+    } catch { load(); }
+  };
+
+  const addTask = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) return;
-    setTasks(prev => [...prev, { ...form, id: newId(), status: 'Backlog', title: form.title.trim(), owner: form.owner.trim() || 'Unassigned', description: form.description.trim() }]);
-    setForm({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
-    setShowForm(false);
+    try {
+      const task = await api('/tasks', {
+        method: 'POST',
+        body: JSON.stringify({ ...form, title: form.title.trim(), owner: form.owner.trim() || 'Unassigned' }),
+      });
+      setTasks(prev => [...prev, task]);
+      setForm({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
+      setShowForm(false);
+    } catch (e) { console.error(e); }
+  };
+
+  const deleteTask = async (id) => {
+    setTasks(prev => prev.filter(t => t.id !== id));
+    try { await api(`/tasks/${id}`, { method: 'DELETE' }); } catch { load(); }
   };
 
   const squadStats = useMemo(() =>
@@ -83,7 +113,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Squad manager panel */}
       {showSquadMgr && (
         <section className="squad-panel">
           <h2>Grupos de Agentes</h2>
@@ -104,55 +133,58 @@ export default function App() {
         </section>
       )}
 
-      {/* Filters */}
       <div className="filters">
         <button className={filterSquad === 'all' ? 'active' : ''} onClick={() => setFilterSquad('all')}>Todos</button>
         {Object.entries(SQUADS).map(([key, s]) => (
-          <button key={key} className={filterSquad === key ? 'active' : ''} onClick={() => setFilterSquad(key)} style={{ '--squad-color': s.color }}>
+          <button key={key} className={filterSquad === key ? 'active' : ''} onClick={() => setFilterSquad(key)}>
             <span className="dot" style={{ background: s.color }} />
             {s.label}
           </button>
         ))}
+        <span className="task-count">{tasks.length} tasks</span>
       </div>
 
-      {/* Board */}
-      <section className="board">
-        {COLUMNS.map(col => (
-          <article key={col} className="column">
-            <div className="col-header">
-              <h2>{col}</h2>
-              <span className="count">{grouped[col].length}</span>
-            </div>
-            <div className="col-body">
-              {grouped[col].map(task => {
-                const squad = SQUADS[task.squad];
-                return (
-                  <div key={task.id} className="card" style={{ '--squad-color': squad?.color || '#7c3aed' }}>
-                    <div className="card-stripe" />
-                    <div className="card-meta">
-                      <span className="task-id">{task.id}</span>
-                      <span className="priority-dot" style={{ background: PRIORITY_COLOR[task.priority] }} title={task.priority} />
+      {loading ? (
+        <div className="loading">Carregando tasks...</div>
+      ) : (
+        <section className="board">
+          {COLUMNS.map(col => (
+            <article key={col} className="column">
+              <div className="col-header">
+                <h2>{col}</h2>
+                <span className="count">{grouped[col].length}</span>
+              </div>
+              <div className="col-body">
+                {grouped[col].map(task => {
+                  const squad = SQUADS[task.squad];
+                  return (
+                    <div key={task.id} className="card" style={{ '--squad-color': squad?.color || '#7c3aed' }}>
+                      <div className="card-stripe" />
+                      <div className="card-meta">
+                        <span className="task-id">{task.id}</span>
+                        <span className="priority-dot" style={{ background: PRIORITY_COLOR[task.priority] }} title={task.priority} />
+                      </div>
+                      <h3>{task.title}</h3>
+                      {task.description && <p>{task.description}</p>}
+                      <div className="card-footer">
+                        <span className="squad-badge" style={{ background: squad?.color + '33', color: squad?.color }}>{squad?.label}</span>
+                        <span className="owner">{task.owner}</span>
+                      </div>
+                      <div className="card-actions">
+                        <button onClick={() => move(task.id, -1)} disabled={task.status === 'Backlog'}>◀</button>
+                        <button onClick={() => move(task.id, 1)} disabled={task.status === 'Done'}>▶</button>
+                        <button className="btn-del" onClick={() => deleteTask(task.id)} title="Remover">✕</button>
+                      </div>
                     </div>
-                    <h3>{task.title}</h3>
-                    {task.description && <p>{task.description}</p>}
-                    <div className="card-footer">
-                      <span className="squad-badge" style={{ background: squad?.color + '33', color: squad?.color }}>{squad?.label}</span>
-                      <span className="owner">{task.owner}</span>
-                    </div>
-                    <div className="card-actions">
-                      <button onClick={() => move(task.id, -1)} disabled={task.status === 'Backlog'}>◀</button>
-                      <button onClick={() => move(task.id, 1)} disabled={task.status === 'Done'}>▶</button>
-                    </div>
-                  </div>
-                );
-              })}
-              {grouped[col].length === 0 && <p className="empty">Vazio</p>}
-            </div>
-          </article>
-        ))}
-      </section>
+                  );
+                })}
+                {grouped[col].length === 0 && <p className="empty">Vazio</p>}
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
 
-      {/* New task form */}
       {showForm && (
         <section className="composer">
           <h2>Nova Tarefa</h2>
