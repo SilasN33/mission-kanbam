@@ -1,0 +1,65 @@
+[
+  {
+    "id": "T-01",
+    "title": "Melhorar UI/UX do Mission Control",
+    "owner": "Web Design Expert",
+    "description": "Analisar e implementar melhorias de design na interface do openclaw-mission-control. Foco em: layout responsivo, cores coerentes, tipografia, espaçamento, acessibilidade e performance CSS.",
+    "squad": "core",
+    "priority": "high",
+    "status": "Backlog"
+  },
+  {
+    "id": "T-101",
+    "title": "Connect Gateway",
+    "owner": "Friday",
+    "description": "Validate ws://127.0.0.1:18789 connection",
+    "squad": "infra",
+    "priority": "high",
+    "status": "Backlog"
+  },
+  {
+    "id": "T-102",
+    "title": "Agent CRUD",
+    "owner": "Atlas",
+    "description": "Form + list for agents",
+    "squad": "core",
+    "priority": "high",
+    "status": "In Progress"
+  },
+  {
+    "id": "T-103",
+    "title": "Mission UI",
+    "owner": "Nyx",
+    "description": "Minimal Kanban board",
+    "squad": "core",
+    "priority": "medium",
+    "status": "Review"
+  },
+  {
+    "id": "T-104",
+    "title": "LLM Router",
+    "owner": "Silas",
+    "description": "Route prompts to best model",
+    "squad": "research",
+    "priority": "medium",
+    "status": "Backlog"
+  },
+  {
+    "id": "T-105",
+    "title": "Docker Compose",
+    "owner": "Atlas",
+    "description": "Multi-service compose setup",
+    "squad": "infra",
+    "priority": "low",
+    "status": "Done"
+  },
+  {
+    "id": "T-106",
+    "title": "Cost Tracker",
+    "owner": "Friday",
+    "description": "Token usage per run",
+    "squad": "ops",
+    "priority": "medium",
+    "status": "In Progress"
+  }
+]
