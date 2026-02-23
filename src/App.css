@@ -1048,6 +1048,34 @@ textarea {
   
   .agents-grid { grid-template-columns: 1fr; }
   .squad-grid { grid-template-columns: 1fr; }
+  .costs-summary { grid-template-columns: 1fr; }
+  
+  .costs-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .costs-filter-group {
+    width: 100%;
+  }
+  
+  .costs-filter {
+    width: 100%;
+  }
+  
+  .costs-row {
+    grid-template-columns: 1fr;
+    gap: var(--sp-md);
+  }
+  
+  .costs-tokens,
+  .costs-price {
+    text-align: left;
+  }
+  
+  .cost-bar-container {
+    grid-column: auto;
+  }
   
   .col-body .card { margin-bottom: var(--sp-sm); }
 }
