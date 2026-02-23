@@ -36,6 +36,14 @@ function readTasks() {
 }
 function writeTasks(tasks) { writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2)); }
 
+// ─── Auth ────────────────────────────────────────────────────────────────────
+const KANBAN_PASSWORD = process.env.KANBAN_PASSWORD || 'changeme123';
+
+function checkAuth(req) {
+  const token = req.headers['x-auth-token'] || req.headers.cookie?.split('auth_token=')[1]?.split(';')[0];
+  return token === KANBAN_PASSWORD;
+}
+
 // ─── OpenClaw status via CLI ─────────────────────────────────────────────────
 let gwState = { connected: false, agents: [], sessions: [], lastPing: null };
 
@@ -108,6 +116,21 @@ const httpServer = createServer(async (req, res) => {
   const path = url.pathname;
 
   if (req.method === 'OPTIONS') return json(res, 204, {});
+
+  // POST /api/auth — login with password
+  if (req.method === 'POST' && path === '/api/auth') {
+    const b = await body(req);
+    if (b.password === KANBAN_PASSWORD) {
+      res.setHeader('Set-Cookie', `auth_token=${KANBAN_PASSWORD}; Path=/; Max-Age=2592000; HttpOnly; SameSite=Lax`);
+      return json(res, 200, { ok: true, message: 'Logged in' });
+    }
+    return json(res, 401, { error: 'Invalid password' });
+  }
+
+  // Require auth for all other /api routes
+  if (path.startsWith('/api/') && !checkAuth(req)) {
+    return json(res, 401, { error: 'Unauthorized' });
+  }
 
   // GET /api/tasks
   if (req.method === 'GET' && path === '/api/tasks') return json(res, 200, readTasks());
