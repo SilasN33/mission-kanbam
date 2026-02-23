@@ -8,6 +8,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
+        // Only used in local dev (npm run dev)
         target: 'http://localhost:3001',
         changeOrigin: true,
       },

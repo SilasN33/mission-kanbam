@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import './App.css';
+import LoginPage from './LoginPage';
 import LogDrawer from './LogDrawer';
 import AgentManager from './AgentManager';
 
@@ -78,6 +79,7 @@ function useCosts() {
 }
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(!!localStorage.getItem('auth_token'));
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterSquad, setFilterSquad] = useState('all');
@@ -92,6 +94,10 @@ export default function App() {
   const [form, setForm] = useState({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
   const [gw, removeAgentOptimistic] = useGateway();
   const costs = useCosts();
+
+  if (!authenticated) {
+    return <LoginPage onLogin={() => setAuthenticated(true)} />;
+  }
 
   const agentAction = async (agentId, action) => {
     setActionLoading(prev => ({ ...prev, [agentId]: action }));
