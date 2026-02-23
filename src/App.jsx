@@ -29,8 +29,17 @@ function useGateway() {
 
   useEffect(() => {
     function connect() {
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const socket = new WebSocket(`${proto}//${location.hostname}:3001`);
+      // On Vercel: use VITE_OPENCLAW_GATEWAY_URL env var (ngrok tunnel)
+      // Local dev: use localhost:3001
+      const gatewayUrl = import.meta.env.VITE_OPENCLAW_GATEWAY_URL || 
+        (location.hostname === 'localhost' ? `ws://localhost:3001` : null);
+      
+      if (!gatewayUrl) {
+        setGw(g => ({ ...g, connected: false }));
+        return;
+      }
+
+      const socket = new WebSocket(gatewayUrl);
       ws.current = socket;
       socket.onmessage = (e) => {
         try {
