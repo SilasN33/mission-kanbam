@@ -47,12 +47,34 @@ function useGateway() {
     return () => ws.current?.close();
   }, []);
 
-  // Optimistic remove — server broadcast will reconcile on next poll
   const removeAgent = useCallback((agentId) => {
     setGw(g => ({ ...g, agents: g.agents.filter(a => a.id !== agentId && a.name !== agentId) }));
   }, []);
 
   return [gw, removeAgent];
+}
+
+// Costs hook — fetches and polls /api/costs every 15s
+function useCosts() {
+  const [costs, setCosts] = useState([]);
+  const pollTimer = useRef(null);
+
+  const fetch_costs = useCallback(async () => {
+    try {
+      const res = await api('/costs');
+      setCosts(res);
+    } catch (e) {
+      console.error('Failed to fetch costs:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetch_costs();
+    pollTimer.current = setInterval(fetch_costs, 15000);
+    return () => clearInterval(pollTimer.current);
+  }, [fetch_costs]);
+
+  return costs;
 }
 
 export default function App() {
@@ -62,11 +84,14 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [showSquadMgr, setShowSquadMgr] = useState(false);
   const [showAgents, setShowAgents] = useState(false);
+  const [showCosts, setShowCosts] = useState(false);
+  const [costFilter, setCostFilter] = useState('all');
   const [showAgentMgr, setShowAgentMgr] = useState(false);
   const [logDrawer, setLogDrawer] = useState(null); // { id, name }
   const [actionLoading, setActionLoading] = useState({});
   const [form, setForm] = useState({ title: '', owner: '', description: '', squad: 'core', priority: 'medium' });
   const [gw, removeAgentOptimistic] = useGateway();
+  const costs = useCosts();
 
   const agentAction = async (agentId, action) => {
     setActionLoading(prev => ({ ...prev, [agentId]: action }));
@@ -190,6 +215,13 @@ export default function App() {
             Squads
           </button>
           <button 
+            onClick={() => setShowCosts(s => !s)}
+            aria-expanded={showCosts}
+            aria-label="Toggle costs panel"
+          >
+            💰 Custos {costs.length > 0 && <span className="pill">{costs.length}</span>}
+          </button>
+          <button 
             className="btn-primary" 
             onClick={() => setShowForm(s => !s)}
             aria-expanded={showForm}
@@ -277,6 +309,76 @@ export default function App() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Costs panel */}
+      {showCosts && (
+        <section className="costs-panel">
+          <div className="costs-header">
+            <h2>Custos por Sessão</h2>
+            <div className="costs-filter-group">
+              <select 
+                value={costFilter} 
+                onChange={e => setCostFilter(e.target.value)}
+                className="costs-filter"
+              >
+                <option value="all">Todos os Modelos</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google</option>
+              </select>
+            </div>
+          </div>
+
+          {costs.length === 0 ? (
+            <p className="empty">Nenhuma sessão com custo registrado.</p>
+          ) : (
+            <>
+              <div className="costs-summary">
+                <div className="costs-metric">
+                  <span className="metric-label">Total Gasto</span>
+                  <span className="metric-value">${costs.reduce((sum, c) => sum + c.totalCost, 0).toFixed(2)}</span>
+                </div>
+                <div className="costs-metric">
+                  <span className="metric-label">Média por Sessão</span>
+                  <span className="metric-value">${(costs.reduce((sum, c) => sum + c.totalCost, 0) / costs.length).toFixed(2)}</span>
+                </div>
+                <div className="costs-metric">
+                  <span className="metric-label">Top Sessão</span>
+                  <span className="metric-value">${costs[0]?.totalCost.toFixed(2) || '0.00'}</span>
+                </div>
+              </div>
+
+              <div className="costs-table">
+                {costs
+                  .filter(c => costFilter === 'all' || c.model.toLowerCase().startsWith(costFilter))
+                  .map(c => {
+                    const costLevel = c.totalCost < 1 ? 'low' : c.totalCost < 5 ? 'medium' : 'high';
+                    return (
+                      <div key={c.key} className={`costs-row costs-${costLevel}`}>
+                        <div className="costs-info">
+                          <strong className="costs-key">{c.displayName}</strong>
+                          <p className="costs-model">{c.model}</p>
+                        </div>
+                        <div className="costs-tokens">
+                          <span>{c.inputTokens + c.outputTokens} tokens</span>
+                        </div>
+                        <div className="costs-price">
+                          <span className="costs-amount">${c.totalCost.toFixed(4)}</span>
+                        </div>
+                        <div className="cost-bar-container">
+                          <div 
+                            className={`cost-bar cost-bar-${costLevel}`}
+                            style={{ width: `${Math.min((c.totalCost / costs[0].totalCost) * 100, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </>
+          )}
         </section>
       )}
 
