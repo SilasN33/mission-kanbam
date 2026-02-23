@@ -155,9 +155,9 @@ export default function App() {
 
   return (
     <div className="app">
-      <header>
+      <header role="banner">
         <div className="brand">
-          <span className="logo">⬡</span>
+          <span className="logo" aria-label="Mission Kanban icon">⬡</span>
           <div>
             <h1>Mission Kanban</h1>
             <p>Operação enxuta · OpenClaw Agents</p>
@@ -165,16 +165,38 @@ export default function App() {
         </div>
         <div className="header-actions">
           {/* Gateway indicator */}
-          <div className={`gw-badge ${gw.connected ? 'gw-ok' : 'gw-off'}`}>
+          <div className={`gw-badge ${gw.connected ? 'gw-ok' : 'gw-off'}`} role="status" aria-live="polite">
             <span className="gw-dot" />
             {gw.connected ? 'Gateway' : 'Offline'}
           </div>
-          <button onClick={() => setShowAgents(s => !s)}>
+          <button 
+            onClick={() => setShowAgents(s => !s)}
+            aria-expanded={showAgents}
+            aria-label="Toggle agents panel"
+          >
             Agents {gw.agents.length > 0 && <span className="pill">{gw.agents.length}</span>}
           </button>
-          <button onClick={() => setShowAgentMgr(true)}>⚙ Gerenciar</button>
-          <button onClick={() => setShowSquadMgr(s => !s)}>Squads</button>
-          <button className="btn-primary" onClick={() => setShowForm(s => !s)}>+ Nova tarefa</button>
+          <button 
+            onClick={() => setShowAgentMgr(true)}
+            aria-label="Open agent manager"
+          >
+            ⚙ Gerenciar
+          </button>
+          <button 
+            onClick={() => setShowSquadMgr(s => !s)}
+            aria-expanded={showSquadMgr}
+            aria-label="Toggle squads panel"
+          >
+            Squads
+          </button>
+          <button 
+            className="btn-primary" 
+            onClick={() => setShowForm(s => !s)}
+            aria-expanded={showForm}
+            aria-label="Create new task"
+          >
+            + Nova tarefa
+          </button>
         </div>
       </header>
 
@@ -187,8 +209,12 @@ export default function App() {
           ) : (
             <div className="agents-grid">
               {gw.agents.map(agent => (
-                <div key={agent.id} className="agent-card">
-                  <div className="agent-status-dot" style={{ background: STATUS_COLOR[agent.status] || '#6b7280' }} />
+                <div key={agent.id} className="agent-card" role="listitem">
+                  <div 
+                    className="agent-status-dot" 
+                    style={{ background: STATUS_COLOR[agent.status] || '#6b7280' }}
+                    aria-label={`Status: ${agent.status || 'unknown'}`}
+                  />
                   <div className="agent-info">
                     <strong>{agent.name || agent.id}</strong>
                     <p>{agent.status || 'unknown'} · {agent.model || '—'}</p>
@@ -255,26 +281,38 @@ export default function App() {
       )}
 
       {/* Filters */}
-      <div className="filters">
-        <button className={filterSquad === 'all' ? 'active' : ''} onClick={() => setFilterSquad('all')}>Todos</button>
+      <div className="filters" role="group" aria-label="Squad filter">
+        <button 
+          className={filterSquad === 'all' ? 'active' : ''} 
+          onClick={() => setFilterSquad('all')}
+          aria-current={filterSquad === 'all' ? 'true' : 'false'}
+        >
+          Todos
+        </button>
         {Object.entries(SQUADS).map(([key, s]) => (
-          <button key={key} className={filterSquad === key ? 'active' : ''} onClick={() => setFilterSquad(key)}>
+          <button 
+            key={key} 
+            className={filterSquad === key ? 'active' : ''} 
+            onClick={() => setFilterSquad(key)}
+            aria-current={filterSquad === key ? 'true' : 'false'}
+            aria-label={`Filter by ${s.label}`}
+          >
             <span className="dot" style={{ background: s.color }} />{s.label}
           </button>
         ))}
-        <span className="task-count">{tasks.length} tasks</span>
+        <span className="task-count" aria-live="polite">{tasks.length} tasks</span>
       </div>
 
       {/* Board */}
-      {loading ? <div className="loading">Carregando...</div> : (
-        <section className="board">
+      {loading ? <div className="loading" role="status" aria-live="polite">Carregando...</div> : (
+        <section className="board" aria-label="Kanban board">
           {COLUMNS.map(col => (
-            <article key={col} className="column">
+            <article key={col} className="column" aria-label={`${col} column`}>
               <div className="col-header">
                 <h2>{col}</h2>
                 <span className="count">{grouped[col].length}</span>
               </div>
-              <div className="col-body">
+              <div className="col-body" role="list">
                 {grouped[col].map(task => {
                   const squad = SQUADS[task.squad];
                   const liveAgent = agentByName[task.owner?.toLowerCase()];
@@ -285,11 +323,18 @@ export default function App() {
                       className="card"
                       style={{ '--squad-color': squad?.color || '#7c3aed' }}
                       data-agent-status={agentStatus || ''}
+                      role="listitem"
+                      aria-label={`Task ${task.id}: ${task.title}`}
                     >
                       <div className="card-stripe" />
                       <div className="card-meta">
                         <span className="task-id">{task.id}</span>
-                        <span className="priority-dot" style={{ background: PRIORITY_COLOR[task.priority] }} title={task.priority} />
+                        <span 
+                          className="priority-dot" 
+                          style={{ background: PRIORITY_COLOR[task.priority] }} 
+                          title={task.priority}
+                          aria-label={`Priority: ${task.priority}`}
+                        />
                       </div>
                       <h3>{task.title}</h3>
                       {task.description && <p>{task.description}</p>}
